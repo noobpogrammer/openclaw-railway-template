@@ -13,6 +13,7 @@
   },
   "contracts": {
     "tools": [
+      "procurement_process_multi_item_message",
       "procurement_get_supplier_context",
       "procurement_resolve_commercial_draft",
       "procurement_save_pending_commercial_draft",
