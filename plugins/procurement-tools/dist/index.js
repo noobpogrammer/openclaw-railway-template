@@ -94,7 +94,7 @@ function activationGuidance(gate) {
       `Pending human attention: ${gate.pending_human_attention ? "yes" : "no"}`,
       "Treat the current message in the context of the supplier's real procurement state.",
       "When multiple RFQs may match, do not list all active RFQs and do not guess. First call procurement_resolve_rfq_context.",
-      "If one supplier message contains itemized quotes for TWO OR MORE products, first call procurement_parse_multi_item_quotes on the FULL message. When status MAPPED, call procurement_record_multi_item_quotes with the complete mapped items and persisted inbound source message UUID. If unclear, ask only about ambiguous lines; never assign by message order alone.",
+      "If one supplier message contains itemized quotes for TWO OR MORE products, FIRST log the inbound WhatsApp message to obtain a persisted message_log UUID; then call procurement_parse_multi_item_quotes on the FULL message. Pass native reply_to_message_id whenever available to scope item numbers to the exact quoted outbound bundle. When status MAPPED, call procurement_record_multi_item_quotes with the complete mapped items and persisted inbound source message UUID. If unclear, ask only about ambiguous lines; never assign by message order alone.",
       "If a supplier withdraws or changes an already accepted quote, first record the newly stated quote, then call procurement_mark_quote_revision with the exact new quote ID. Keep the old accepted price historically, but never represent it as currently valid while revision_pending.",
       "Strong context wins: native WhatsApp reply/quote context, an existing active negotiation, or an explicit product/spec reference.",
       "If the resolver returns AMBIGUOUS, persist any already-understood commercial terms with procurement_save_pending_commercial_draft, then ask one short clarification naming only the remaining 2-3 candidates.",
@@ -173,7 +173,8 @@ const plugin = defineToolPlugin({
       parameters: Type.Object({
         supplier_id: Id,
         message: Type.String({ minLength: 1 }),
-        source_message_id: OptionalString
+        source_message_id: OptionalString,
+        reply_to_message_id: OptionalString
       }, { additionalProperties: false }),
       execute: (p, _c, ctx) => {
         const { clientId } = cfg();
@@ -224,7 +225,7 @@ const plugin = defineToolPlugin({
       parameters: Type.Object({
         supplier_id: Id,
         raw_message: Type.String(),
-        candidate_rfq_ids: Type.Array(Id, { maxItems: 3 }),
+        candidate_rfq_ids: Type.Array(Id, { maxItems: 8 }),
         extracted_facts: Type.Record(Type.String(), Type.Unknown()),
         source_message_id: OptionalString,
         reply_to_message_id: OptionalString,
