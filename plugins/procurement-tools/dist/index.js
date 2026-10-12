@@ -578,7 +578,7 @@ plugin.register = (api) => {
     if (!looksCommercialSupplierReply(finalText)) return undefined;
 
     const sessionKey = String(context?.sessionKey || "");
-    if (hasFreshCommercialApproval(sessionKey, event?.content)) return undefined;
+    if (hasFreshCommercialApproval(sessionKey, finalText)) return undefined;
 
     return {
       action: "revise",
