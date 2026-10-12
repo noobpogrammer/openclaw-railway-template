@@ -303,13 +303,13 @@ const plugin = defineToolPlugin({
     tool({
       name: "procurement_review_commercial_action",
       label: "Review Commercial Action",
-      description: "Submit your proposed commercial action to the minimal hard guard before sending it to the supplier. The guard does NOT choose strategy or wording. It returns APPROVE, ADJUST, RETRY, ESCALATE, or REJECT. On ADJUST/RETRY, reconsider and call once more with attempt_number=2. Never send a commercial commitment before APPROVE.",
+      description: "Propose a STRUCTURED JSON action and terms; the backend validates hard purchasing limits and returns the exact approved_message text. Do not write your own commercial message. On APPROVE, send ONLY approved_message exactly; on ADJUST/RETRY revise JSON and request approval again, otherwise escalate.",
       parameters: Type.Object({
         supplier_id: Id,
         rfq_id: Type.Optional(Id),
         quote_id: Type.Optional(Id),
         action_type: Type.String(),
-        proposed_message: Type.String({ minLength: 1, maxLength: 4000 }),
+        proposed_message: Type.Optional(Type.String({ maxLength: 4000 })),
         attempt_number: Type.Integer({ minimum: 1, maximum: 2 }),
         proposal: Type.Record(Type.String(), Type.Unknown()),
         assessment: Type.Optional(Type.Record(Type.String(), Type.Unknown()))
@@ -578,7 +578,7 @@ plugin.register = (api) => {
     if (!looksCommercialSupplierReply(finalText)) return undefined;
 
     const sessionKey = String(context?.sessionKey || "");
-    if (hasFreshCommercialApproval(sessionKey, event?.content)) return undefined;
+    if (hasFreshCommercialApproval(sessionKey, finalText)) return undefined;
 
     return {
       action: "revise",
