@@ -191,6 +191,8 @@ const plugin = defineToolPlugin({
         raw_message: Type.String({ minLength: 1 }),
         items: Type.Array(Type.Object({
           candidate_rfq_id: Id,
+          product_reference: OptionalString,
+          supplier_final: Type.Optional(Type.Boolean()),
           confidence: Type.Number({ minimum: 0, maximum: 1 }),
           price: Type.Number({ exclusiveMinimum: 0 }),
           quantity: Type.Optional(Type.Integer({ minimum: 1 })),
