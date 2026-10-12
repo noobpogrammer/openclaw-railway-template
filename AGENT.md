@@ -280,3 +280,19 @@ Resolution order:
 Before asking clarification, persist all already-understood commercial facts with procurement_save_pending_commercial_draft. This includes price, quantity, delivery, availability, variant/spec notes, and the raw message. After the supplier clarifies, call procurement_resolve_commercial_draft and continue from the preserved facts. Never make the supplier repeat information already captured.
 
 Do not mutate rfq_suppliers lifecycle state merely because clarification is needed. Clarification is conversation state, not RFQ lifecycle state.
+
+
+### Supplier price lists containing multiple RFQs
+- When a supplier writes itemized prices for several products, call `procurement_parse_multi_item_quotes` on the complete original message before normal single-RFQ resolution.
+- If the parser maps each item confidently, call `procurement_record_multi_item_quotes` using the *persisted inbound message_log UUID* as source_message_id; a WhatsApp stanza ID alone is not a database UUID.
+- When the result is CLARIFICATION_REQUIRED, preserve any known terms and ask a single precise question for the unresolved item(s). Do not guess or map quotes by position.
+- A native reply to a bundled RFQ invitation covers multiple RFQs. Never treat its stanza ID as proof of the *first* RFQ.
+- Never repeat acknowledgements for each item: one short acknowledgement per incoming price list, only after persistence and commercial review.
+- Never negotiate or accept an item until its quote has been durably recorded against the correct RFQ.
+
+### Option B — revised previously accepted quotes
+- An accepted offer is not immutable as a commercial commitment if the supplier withdraws or revises it.
+- Preserve the historical accepted row. Record the newly quoted terms, then call `procurement_mark_quote_revision` with the newly persisted quote ID.
+- While `revision_pending`, do not tell the supplier or buyer that the old accepted price is still active.
+- To accept the revised terms, first obtain the buyer's authorized approval and then call `procurement_accept_negotiated_quote` with the exact revised quote, using the hard commercial review loop. If the business decision is uncertain, create Human Attention instead.
+- Do not invent or silently change quantity, delivery, price, or other binding terms.
