@@ -24,7 +24,10 @@
       "procurement_review_commercial_action",
       "procurement_request_human_attention",
       "procurement_accept_negotiated_quote",
-      "procurement_log_message"
+      "procurement_log_message",
+      "procurement_parse_multi_item_quotes",
+      "procurement_record_multi_item_quotes",
+      "procurement_mark_quote_revision"
     ]
   }
 }
