@@ -61,18 +61,19 @@ function rememberCommercialApproval(sessionKey, result) {
   if (!sessionKey || result?.outcome !== "APPROVE") return;
   approvedCommercialBySession.set(sessionKey, {
     at: Date.now(),
-    actionType: result?.action_type || null
+    actionType: result?.action_type || null,
+    message: String(result?.approved_message || "").trim()
   });
 }
 
-function hasFreshCommercialApproval(sessionKey) {
+function hasFreshCommercialApproval(sessionKey, actualMessage) {
   const entry = approvedCommercialBySession.get(String(sessionKey || ""));
   if (!entry) return false;
   if (Date.now() - entry.at > 120000) {
     approvedCommercialBySession.delete(String(sessionKey || ""));
     return false;
   }
-  return true;
+  return Boolean(entry.message) && entry.message === String(actualMessage || "").trim();
 }
 
 function consumeCommercialApproval(sessionKey) {
@@ -308,6 +309,7 @@ const plugin = defineToolPlugin({
         rfq_id: Type.Optional(Id),
         quote_id: Type.Optional(Id),
         action_type: Type.String(),
+        proposed_message: Type.String({ minLength: 1, maxLength: 4000 }),
         attempt_number: Type.Integer({ minimum: 1, maximum: 2 }),
         proposal: Type.Record(Type.String(), Type.Unknown()),
         assessment: Type.Optional(Type.Record(Type.String(), Type.Unknown()))
@@ -576,7 +578,7 @@ plugin.register = (api) => {
     if (!looksCommercialSupplierReply(finalText)) return undefined;
 
     const sessionKey = String(context?.sessionKey || "");
-    if (hasFreshCommercialApproval(sessionKey)) return undefined;
+    if (hasFreshCommercialApproval(sessionKey, event?.content)) return undefined;
 
     return {
       action: "revise",
