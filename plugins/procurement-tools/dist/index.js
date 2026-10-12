@@ -625,7 +625,7 @@ plugin.register = (api) => {
     // /internal/whatsapp/send route and must not require negotiation approval.
     if (deliverySessionKey.includes(":whatsapp:direct:") && looksCommercialSupplierReply(event?.content)) {
       const sessionKey = deliverySessionKey;
-      if (!hasFreshCommercialApproval(sessionKey)) {
+      if (!hasFreshCommercialApproval(sessionKey, event?.content)) {
         api.logger?.error?.(
           "[commercial-authority] blocked unreviewed commercial WhatsApp reply"
         );
