@@ -599,7 +599,7 @@ plugin.register = (api) => {
 
   // Supplier-safety boundary: internal model/provider failures are operational
   // data, never supplier-facing WhatsApp content.
-  api.on("message_sending", (event, context) => {
+  api.on("message_sending", async (event, context) => {
     const channelId = String(context?.channelId || "").toLowerCase();
     if (channelId !== "whatsapp") return undefined;
 
@@ -618,6 +618,23 @@ plugin.register = (api) => {
         cancel: true,
         cancelReason: "supplier_safety_provider_error"
       };
+    }
+
+    // Explicit system authorization is checked against a currently claimed,
+    // exact-text, supplier-bound RFQ in the backend. No session-name bypass.
+    // The hook is async because this lookup is authoritative, not heuristic.
+    try {
+      const { clientId } = cfg();
+      const grant = await post("/openclaw/authorize-system-outbound", {
+        client_id: clientId,
+        phone_number: event?.to,
+        message: String(event?.content || "")
+      });
+      if (grant?.authorized && grant?.purpose === "initial_rfq") {
+        return undefined;
+      }
+    } catch (err) {
+      api.logger?.warn?.("[procurement-system-outbound] authorization unavailable; applying conversational guard");
     }
 
     // The LLM commercial guard is restricted to conversational WhatsApp agent
