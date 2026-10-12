@@ -663,14 +663,21 @@ plugin.register = (api) => {
 
     try {
       const { clientId } = cfg();
-      await post("/openclaw/message-delivery", {
+      const messageId = event?.messageId || event?.message?.id || event?.result?.messageId || null;
+      const success = event?.success === true;
+      if (success && !messageId) {
+        api.logger?.warn?.("[procurement-delivery] confirmed send without platform ID; delivery remains unverified");
+        return;
+      }
+      const result = await post("/openclaw/message-delivery", {
         client_id: clientId,
         phone_number: event?.to,
         body: String(event?.content || ""),
-        success: Boolean(event?.success),
-        external_message_id: event?.messageId || null,
+        success,
+        external_message_id: messageId,
         error: event?.error || null
       });
+      api.logger?.info?.(`[procurement-delivery] reconciliation ${result?.updated ? "updated" : "not_updated"} platformId=${messageId || "none"}`);
     } catch (err) {
       api.logger?.warn?.(
         `[procurement-delivery] failed to reconcile WhatsApp delivery: ${err?.message || err}`
