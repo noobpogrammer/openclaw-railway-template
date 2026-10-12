@@ -283,9 +283,9 @@ Do not mutate rfq_suppliers lifecycle state merely because clarification is need
 
 
 ### Supplier price lists containing multiple RFQs
-- When a supplier writes itemized prices for several products, call `procurement_parse_multi_item_quotes` on the complete original message before normal single-RFQ resolution.
-- If the parser maps each item confidently, call `procurement_record_multi_item_quotes` using the *persisted inbound message_log UUID* as source_message_id; a WhatsApp stanza ID alone is not a database UUID.
-- When the result is CLARIFICATION_REQUIRED, preserve any known terms and ask a single precise question for the unresolved item(s). Do not guess or map quotes by position.
+- When a supplier writes itemized prices for several products, first log the full inbound message, then call `procurement_process_multi_item_message` using the persisted message_log UUID and native replied-to WhatsApp message ID where available.
+- When the tool returns `MULTI_RFQ_RECORDED`, the backend has atomically saved every mapped RFQ. Never record the same batch again or repeat supplier acknowledgements.
+- When the result is CLARIFICATION_REQUIRED, the backend has already saved a durable pending draft; ask a single precise question for the unresolved item(s). Do not guess or map quotes by position.
 - A native reply to a bundled RFQ invitation covers multiple RFQs. Never treat its stanza ID as proof of the *first* RFQ.
 - Never repeat acknowledgements for each item: one short acknowledgement per incoming price list, only after persistence and commercial review.
 - Never negotiate or accept an item until its quote has been durably recorded against the correct RFQ.
