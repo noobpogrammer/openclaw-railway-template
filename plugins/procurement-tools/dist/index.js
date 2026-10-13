@@ -39,6 +39,24 @@ function normalizeSenderPhone(value) {
   return digits ? `+${digits}` : "";
 }
 
+
+function inspectInboundReplyMetadata(event, context) {
+  // These are candidate provider/hook shapes, not asserted OpenClaw contracts.
+  // Log only field presence, never full messages, phone numbers or stanza values.
+  const candidates = [
+    ["event.message.contextInfo.stanzaId", event?.message?.contextInfo?.stanzaId],
+    ["event.message.extendedTextMessage.contextInfo.stanzaId", event?.message?.extendedTextMessage?.contextInfo?.stanzaId],
+    ["event.contextInfo.stanzaId", event?.contextInfo?.stanzaId],
+    ["event.replyToMessageId", event?.replyToMessageId],
+    ["event.reply_to_message_id", event?.reply_to_message_id],
+    ["context.replyToMessageId", context?.replyToMessageId],
+    ["context.reply_to_message_id", context?.reply_to_message_id],
+    ["context.quotedMessageId", context?.quotedMessageId]
+  ];
+  const found = candidates.find(([, value]) => typeof value === "string" && value.length > 0);
+  return { present: Boolean(found), source: found?.[0] || "not_exposed_in_hook" };
+}
+
 const approvedCommercialBySession = new Map();
 // Short-lived, per-recipient decision for the inbound turn. This prevents the
 // model from overriding a negative activation decision with a social reply.
@@ -168,7 +186,7 @@ const plugin = defineToolPlugin({
     tool({
       name: "procurement_resolve_rfq_context",
       label: "Resolve RFQ Context",
-      description: "Resolve the current supplier message against multiple open RFQs using strong context first: native reply context, active negotiation, explicit product/spec clues, then deduction. Returns RESOLVED or a reduced AMBIGUOUS candidate set of at most three RFQs. Use before asking clarification when more than one RFQ may apply.",
+      description: "Resolve the current supplier message against multiple open RFQs using strong context first: native reply context, active negotiation, explicit product/spec clues, then deduction. Returns RESOLVED or an AMBIGUOUS candidate set; never assume an older duplicate RFQ matches the latest bundle. Use before asking clarification when more than one RFQ may apply.",
       parameters: Type.Object({
         supplier_id: Id,
         message: Type.String(),
@@ -189,7 +207,7 @@ const plugin = defineToolPlugin({
     tool({
       name: "procurement_validate_rfq_mapping",
       label: "Validate Supplier RFQ Mapping",
-      description: "Before recording a single-item quote, validate a fresh proposed RFQ association. Retry on RETRY with corrected mapping; CANDIDATE_VALID is NOT proof of semantic identity when multiple RFQs are active.",
+      description: "Before recording each quote, validate its proposed RFQ against the latest supplier invitation and explicit RFQ reference. A response other than VERIFIED is not binding when duplicate products exist; request clarification on ambiguity.",
       parameters: Type.Object({
         supplier_id: Id,
         proposed_rfq_id: Id,
@@ -313,7 +331,7 @@ const plugin = defineToolPlugin({
     tool({
       name: "procurement_get_negotiation_context",
       label: "Get Negotiation Context",
-      description: "Read the hard commercial facts for an RFQ: buyer targets/limits, supplier quote history, active negotiation state, and authorized trade-off constraints. In Phase 2 YOU choose the negotiation strategy and counter; this tool does not choose it for you.",
+      description: "Read current RFQ authority and separately labeled historical cross-supplier price benchmarks. Use comparable past prices to guide proposed counteroffers, NEVER as current acceptance authorization. Preserve benchmark source RFQ IDs in commercial review assessment, if a benchmark influenced the proposal.",
       parameters: Type.Object({
         supplier_id: Id,
         rfq_id: Id
@@ -512,6 +530,8 @@ plugin.register = (api) => {
     const channel = String(context?.channel || context?.channelId || "").toLowerCase();
     if (channel !== "whatsapp") return undefined;
 
+    const replyDiagnostic = inspectInboundReplyMetadata(event, context);
+    api.logger?.info?.(`[procurement-routing] inbound-hook reply_id_present=${replyDiagnostic.present} field=${replyDiagnostic.source} session_present=${Boolean(context?.sessionKey)}`);
     const phone = normalizeSenderPhone(context?.senderId || context?.senderExternalId || context?.chatId);
     if (!phone) {
       return {
