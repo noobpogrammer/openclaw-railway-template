@@ -168,7 +168,7 @@ const plugin = defineToolPlugin({
     tool({
       name: "procurement_resolve_rfq_context",
       label: "Resolve RFQ Context",
-      description: "Resolve the current supplier message against multiple open RFQs using strong context first: native reply context, active negotiation, explicit product/spec clues, then deduction. Returns RESOLVED or a reduced AMBIGUOUS candidate set of at most three RFQs. Use before asking clarification when more than one RFQ may apply.",
+      description: "Resolve the current supplier message against multiple open RFQs using strong context first: native reply context, active negotiation, explicit product/spec clues, then deduction. Returns RESOLVED or an AMBIGUOUS candidate set; never assume an older duplicate RFQ matches the latest bundle. Use before asking clarification when more than one RFQ may apply.",
       parameters: Type.Object({
         supplier_id: Id,
         message: Type.String(),
@@ -189,7 +189,7 @@ const plugin = defineToolPlugin({
     tool({
       name: "procurement_validate_rfq_mapping",
       label: "Validate Supplier RFQ Mapping",
-      description: "Before recording a single-item quote, validate a fresh proposed RFQ association. Retry on RETRY with corrected mapping; CANDIDATE_VALID is NOT proof of semantic identity when multiple RFQs are active.",
+      description: "Before recording each quote, validate its proposed RFQ against the latest supplier invitation and explicit RFQ reference. A response other than VERIFIED is not binding when duplicate products exist; request clarification on ambiguity.",
       parameters: Type.Object({
         supplier_id: Id,
         proposed_rfq_id: Id,
@@ -313,7 +313,7 @@ const plugin = defineToolPlugin({
     tool({
       name: "procurement_get_negotiation_context",
       label: "Get Negotiation Context",
-      description: "Read the hard commercial facts for an RFQ: buyer targets/limits, supplier quote history, active negotiation state, and authorized trade-off constraints. In Phase 2 YOU choose the negotiation strategy and counter; this tool does not choose it for you.",
+      description: "Read current RFQ authority and separately labeled historical cross-supplier price benchmarks. Use comparable past prices to guide proposed counteroffers, NEVER as current acceptance authorization. Preserve benchmark source RFQ IDs in commercial review assessment, if a benchmark influenced the proposal.",
       parameters: Type.Object({
         supplier_id: Id,
         rfq_id: Id
