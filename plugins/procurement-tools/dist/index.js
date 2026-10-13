@@ -598,7 +598,9 @@ plugin.register = (api) => {
     if (!looksCommercialSupplierReply(finalText)) return undefined;
 
     const sessionKey = String(context?.sessionKey || "");
-    if (hasFreshCommercialApproval(sessionKey, finalText)) return undefined;
+    // The real send boundary obtains an atomic backend claim; ephemeral session
+    // memory must never be a prerequisite for delivery.
+    return undefined;
 
     return {
       action: "revise",
@@ -660,18 +662,23 @@ plugin.register = (api) => {
     // The LLM commercial guard is restricted to conversational WhatsApp agent
     // sessions. Backend-originated RFQ invitations use the authenticated
     // /internal/whatsapp/send route and must not require negotiation approval.
-    if (deliverySessionKey.includes(":whatsapp:direct:") && looksCommercialSupplierReply(event?.content)) {
-      const sessionKey = deliverySessionKey;
-      if (!hasFreshCommercialApproval(sessionKey, event?.content)) {
-        api.logger?.error?.(
-          "[commercial-authority] blocked unreviewed commercial WhatsApp reply"
-        );
-        return {
-          cancel: true,
-          cancelReason: "commercial_action_not_reviewed"
-        };
+    if (deliverySessionKey.includes(":whatsapp:direct:")) {
+      try {
+        const { clientId } = cfg();
+        const claim = await post("/openclaw/claim-commercial-outbound", {
+          client_id: clientId,
+          phone_number: event?.to,
+          message: String(event?.content || "")
+        });
+        if (!claim?.authorized) {
+          api.logger?.error?.("[commercial-authority] no durable approval for outgoing message");
+          return { cancel: true, cancelReason: "commercial_action_not_approved" };
+        }
+        api.logger?.info?.(`[commercial-authority] claimed durable approval ${claim.approval_id}`);
+      } catch (err) {
+        api.logger?.error?.(`[commercial-authority] approval claim failed: ${err?.message || err}`);
+        return { cancel: true, cancelReason: "commercial_approval_unavailable" };
       }
-      consumeCommercialApproval(sessionKey);
     }
 
     return undefined;
