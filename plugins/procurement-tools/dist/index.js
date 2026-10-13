@@ -118,6 +118,8 @@ function activationGuidance(gate) {
       "Judgment examples, not formulas: tiny supplier movement -> usually hold or move minimally; meaningful movement -> consider a controlled reciprocal concession; repeated refusal -> change tactic instead of repeating the exact same counter; favorable quote below target -> never negotiate upward; final above hard authority -> escalate.",
       "Before sending any price/quantity/delivery/acceptance commitment, call procurement_review_commercial_action.",
       "If review returns ADJUST or RETRY, reconsider and call it one more time with attempt_number=2. If still not approved, request Human Attention.",
+      "After APPROVE, use natural WhatsApp wording but preserve exactly the approved price, quantity, delivery and action type. No extra promise, offer, acceptance, or unauthorized concession.",
+      "Never send a commercial reply on REJECT, ESCALATE, RETRY or ADJUST. The backend JSON review is the one commercial approval stage.",
       "Supplier-facing wording must stay natural and varied; never expose internal targets, limits, guard feedback, tools, or structured assessment.",
     ].join("\n");
   }
@@ -323,7 +325,7 @@ const plugin = defineToolPlugin({
     tool({
       name: "procurement_review_commercial_action",
       label: "Review Commercial Action",
-      description: "Propose a STRUCTURED JSON action and terms; the backend validates hard purchasing limits and returns the exact approved_message text. Do not write your own commercial message. On APPROVE, send ONLY approved_message exactly; on ADJUST/RETRY revise JSON and request approval again, otherwise escalate.",
+      description: "Propose STRUCTURED JSON action/terms for backend validation. On APPROVE, reply naturally without changing approved action, price, quantity or delivery. Do not make any other commercial commitment. On ADJUST/RETRY revise JSON and request approval again, otherwise escalate.",
       parameters: Type.Object({
         supplier_id: Id,
         rfq_id: Type.Optional(Id),
@@ -590,35 +592,6 @@ plugin.register = (api) => {
     }
   });
 
-  api.on("before_agent_finalize", (event, context) => {
-    const channel = String(context?.channel || context?.channelId || "").toLowerCase();
-    if (channel !== "whatsapp") return undefined;
-
-    const finalText = String(event?.lastAssistantMessage || "").trim();
-    if (!looksCommercialSupplierReply(finalText)) return undefined;
-
-    const sessionKey = String(context?.sessionKey || "");
-    // The real send boundary obtains an atomic backend claim; ephemeral session
-    // memory must never be a prerequisite for delivery.
-    return undefined;
-
-    return {
-      action: "revise",
-      reason: "commercial_action_requires_backend_review",
-      retry: {
-        instruction: [
-          "Your proposed supplier reply contains a commercial action or commercial-state reference.",
-          "Before finalizing, persist any supplier quote if needed, read negotiation context, then call procurement_review_commercial_action.",
-          "If the guard returns APPROVE, produce a natural supplier-facing reply.",
-          "If ADJUST or RETRY, reconsider and submit one second proposal only.",
-          "If ESCALATE/REJECT, do not make the commitment; request Human Attention and use a brief holding reply only if context requires it."
-        ].join(" "),
-        idempotencyKey: `procurement-commercial-review:${sessionKey || event?.runId || "unknown"}`,
-        maxAttempts: 2
-      }
-    };
-  });
-
   // Supplier-safety boundary: internal model/provider failures are operational
   // data, never supplier-facing WhatsApp content.
   api.on("message_sending", async (event, context) => {
@@ -642,44 +615,9 @@ plugin.register = (api) => {
       };
     }
 
-    // Explicit system authorization is checked against a currently claimed,
-    // exact-text, supplier-bound RFQ in the backend. No session-name bypass.
-    // The hook is async because this lookup is authoritative, not heuristic.
-    try {
-      const { clientId } = cfg();
-      const grant = await post("/openclaw/authorize-system-outbound", {
-        client_id: clientId,
-        phone_number: event?.to,
-        message: String(event?.content || "")
-      });
-      if (grant?.authorized && grant?.purpose === "initial_rfq") {
-        return undefined;
-      }
-    } catch (err) {
-      api.logger?.warn?.("[procurement-system-outbound] authorization unavailable; applying conversational guard");
-    }
-
-    // The LLM commercial guard is restricted to conversational WhatsApp agent
-    // sessions. Backend-originated RFQ invitations use the authenticated
-    // /internal/whatsapp/send route and must not require negotiation approval.
-    if (deliverySessionKey.includes(":whatsapp:direct:")) {
-      try {
-        const { clientId } = cfg();
-        const claim = await post("/openclaw/claim-commercial-outbound", {
-          client_id: clientId,
-          phone_number: event?.to,
-          message: String(event?.content || "")
-        });
-        if (!claim?.authorized) {
-          api.logger?.error?.("[commercial-authority] no durable approval for outgoing message");
-          return { cancel: true, cancelReason: "commercial_action_not_approved" };
-        }
-        api.logger?.info?.(`[commercial-authority] claimed durable approval ${claim.approval_id}`);
-      } catch (err) {
-        api.logger?.error?.(`[commercial-authority] approval claim failed: ${err?.message || err}`);
-        return { cancel: true, cancelReason: "commercial_approval_unavailable" };
-      }
-    }
+    // Commercial terms have already been reviewed as structured JSON by the
+    // backend. Do not perform a second commercial approval at WhatsApp send time.
+    // Retain activation gating, provider-error suppression, and delivery receipts.
 
     return undefined;
   });
