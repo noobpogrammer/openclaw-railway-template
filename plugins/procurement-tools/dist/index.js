@@ -662,7 +662,7 @@ plugin.register = (api) => {
     // The LLM commercial guard is restricted to conversational WhatsApp agent
     // sessions. Backend-originated RFQ invitations use the authenticated
     // /internal/whatsapp/send route and must not require negotiation approval.
-    if (deliverySessionKey.includes(":whatsapp:direct:") && looksCommercialSupplierReply(event?.content)) {
+    if (deliverySessionKey.includes(":whatsapp:direct:")) {
       try {
         const { clientId } = cfg();
         const claim = await post("/openclaw/claim-commercial-outbound", {
