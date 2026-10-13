@@ -502,12 +502,13 @@ const plugin = defineToolPlugin({
     tool({
       name: "procurement_log_message",
       label: "Log Supplier Message",
-      description: "Log an inbound or outbound supplier message in the procurement backend. This tool does not send WhatsApp messages.",
+      description: "Log an inbound or outbound supplier message in the procurement backend. This tool does not send WhatsApp messages. For a consolidated OUTBOUND commercial negotiation or confirmation, supply rfq_ids containing EVERY exact RFQ UUID after commercial review approval; never infer IDs from product names. For inbound messages omit rfq_ids.",
       parameters: Type.Object({
         supplier_id: Id,
         direction: Type.Union([Type.Literal("inbound"), Type.Literal("outbound")]),
         body: Type.String(),
         related_rfq_id: Type.Optional(Id),
+        rfq_ids: Type.Optional(Type.Array(Id, { minItems: 1, maxItems: 8 })),
         status: OptionalString,
         event_key: OptionalString
       }, { additionalProperties: false }),
