@@ -39,6 +39,24 @@ function normalizeSenderPhone(value) {
   return digits ? `+${digits}` : "";
 }
 
+
+function inspectInboundReplyMetadata(event, context) {
+  // These are candidate provider/hook shapes, not asserted OpenClaw contracts.
+  // Log only field presence, never full messages, phone numbers or stanza values.
+  const candidates = [
+    ["event.message.contextInfo.stanzaId", event?.message?.contextInfo?.stanzaId],
+    ["event.message.extendedTextMessage.contextInfo.stanzaId", event?.message?.extendedTextMessage?.contextInfo?.stanzaId],
+    ["event.contextInfo.stanzaId", event?.contextInfo?.stanzaId],
+    ["event.replyToMessageId", event?.replyToMessageId],
+    ["event.reply_to_message_id", event?.reply_to_message_id],
+    ["context.replyToMessageId", context?.replyToMessageId],
+    ["context.reply_to_message_id", context?.reply_to_message_id],
+    ["context.quotedMessageId", context?.quotedMessageId]
+  ];
+  const found = candidates.find(([, value]) => typeof value === "string" && value.length > 0);
+  return { present: Boolean(found), source: found?.[0] || "not_exposed_in_hook" };
+}
+
 const approvedCommercialBySession = new Map();
 // Short-lived, per-recipient decision for the inbound turn. This prevents the
 // model from overriding a negative activation decision with a social reply.
@@ -512,6 +530,8 @@ plugin.register = (api) => {
     const channel = String(context?.channel || context?.channelId || "").toLowerCase();
     if (channel !== "whatsapp") return undefined;
 
+    const replyDiagnostic = inspectInboundReplyMetadata(event, context);
+    api.logger?.info?.(`[procurement-routing] inbound-hook reply_id_present=${replyDiagnostic.present} field=${replyDiagnostic.source} session_present=${Boolean(context?.sessionKey)}`);
     const phone = normalizeSenderPhone(context?.senderId || context?.senderExternalId || context?.chatId);
     if (!phone) {
       return {
