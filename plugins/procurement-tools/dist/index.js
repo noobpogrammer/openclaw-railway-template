@@ -57,6 +57,25 @@ function inspectInboundReplyMetadata(event, context) {
   return { present: Boolean(found), source: found?.[0] || "not_exposed_in_hook" };
 }
 
+// Inbound quoted-message metadata is only available when the trusted WhatsApp
+// message_received hook is opted in via channels.whatsapp.pluginHooks.messageReceived.
+// Store metadata briefly by OpenClaw session; never log supplier content or IDs.
+const quotedReplyBySession = new Map();
+function inboundQuotedReply(event, context) {
+  const fields = [context?.replyToId, context?.replyToIdFull, event?.replyToId, event?.replyToIdFull,
+    event?.metadata?.replyToId, event?.metadata?.replyToIdFull];
+  return fields.find(v => typeof v === "string" && v.trim())?.trim() || "";
+}
+function lookupQuotedReply(sessionKey) {
+  const entry = quotedReplyBySession.get(String(sessionKey || ""));
+  if (!entry) return "";
+  if (Date.now() - entry.at > 120000) {
+    quotedReplyBySession.delete(String(sessionKey || ""));
+    return "";
+  }
+  return entry.id;
+}
+
 const approvedCommercialBySession = new Map();
 // Short-lived, per-recipient decision for the inbound turn. This prevents the
 // model from overriding a negative activation decision with a social reply.
@@ -526,12 +545,34 @@ const registerProcurementTools = plugin.register.bind(plugin);
 plugin.register = (api) => {
   registerProcurementTools(api);
 
+  api.on("message_received", async (event, context) => {
+    if (String(context?.channelId || context?.channel || event?.channel || "").toLowerCase() !== "whatsapp") return;
+    const sessionKey = String(context?.sessionKey || "");
+    const replyId = inboundQuotedReply(event, context);
+    if (sessionKey) {
+      if (replyId) quotedReplyBySession.set(sessionKey, { id: replyId, at: Date.now() });
+      else quotedReplyBySession.delete(sessionKey);
+    }
+    api.logger?.info?.(`[procurement-routing] message_received reply_id_present=${Boolean(replyId)} session_present=${Boolean(sessionKey)}`);
+  });
+
+  api.on("before_tool_call", async (event, context) => {
+    if (!String(event?.toolName || "").startsWith("procurement_")) return;
+    const params = event?.params;
+    if (!params || typeof params !== "object" || !Object.prototype.hasOwnProperty.call(params, "reply_to_message_id")) return;
+    const replyId = lookupQuotedReply(context?.sessionKey);
+    if (!replyId) return;
+    // Never trust an LLM-supplied reply identifier over provider metadata.
+    return { params: { ...params, reply_to_message_id: replyId } };
+  });
+
   api.on("before_prompt_build", async (event, context) => {
     const channel = String(context?.channel || context?.channelId || "").toLowerCase();
     if (channel !== "whatsapp") return undefined;
 
     const replyDiagnostic = inspectInboundReplyMetadata(event, context);
-    api.logger?.info?.(`[procurement-routing] inbound-hook reply_id_present=${replyDiagnostic.present} field=${replyDiagnostic.source} session_present=${Boolean(context?.sessionKey)}`);
+    const receivedReplyId = lookupQuotedReply(context?.sessionKey);
+    api.logger?.info?.(`[procurement-routing] inbound-hook reply_id_present=${Boolean(receivedReplyId || replyDiagnostic.present)} field=${receivedReplyId ? "message_received" : replyDiagnostic.source} session_present=${Boolean(context?.sessionKey)}`);
     const phone = normalizeSenderPhone(context?.senderId || context?.senderExternalId || context?.chatId);
     if (!phone) {
       return {
