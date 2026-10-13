@@ -42,6 +42,10 @@ function normalizeSenderPhone(value) {
 const approvedCommercialBySession = new Map();
 // Short-lived, per-recipient decision for the inbound turn. This prevents the
 // model from overriding a negative activation decision with a social reply.
+const pendingDeliveryBindings = new Map();
+function outboundBindingKey(phone, content) {
+  return JSON.stringify([normalizeSenderPhone(phone), String(content || "")]);
+}
 const blockedInboundByPhone = new Map();
 // Denials remain in force until the NEXT inbound activation-gate decision for
 // the same supplier. Slow model turns must not accidentally outlive a TTL.
@@ -615,10 +619,24 @@ plugin.register = (api) => {
       };
     }
 
-    // Commercial terms have already been reviewed as structured JSON by the
-    // backend. Do not perform a second commercial approval at WhatsApp send time.
-    // Retain activation gating, provider-error suppression, and delivery receipts.
-
+    // Bind a pre-existing outbound log before sending, not a second commercial
+    // approval. System invitations are already bound by the sender's own path.
+    if (deliverySessionKey.includes(":whatsapp:direct:")) {
+      try {
+        const { clientId } = cfg();
+        const binding = await post("/openclaw/prepare-outbound-delivery", {
+          client_id: clientId, phone_number: event?.to,
+          body: String(event?.content || "")
+        });
+        if (!binding?.bound) {
+          api.logger?.warn?.("[procurement-delivery] no unique pending outbound row; delivery untracked");
+        } else {
+          pendingDeliveryBindings.set(outboundBindingKey(event?.to, event?.content), binding.message_log_id);
+        }
+      } catch (err) {
+        api.logger?.warn?.(`[procurement-delivery] bind unavailable: ${err?.message || err}`);
+      }
+    }
     return undefined;
   });
 
@@ -634,12 +652,16 @@ plugin.register = (api) => {
         api.logger?.warn?.("[procurement-delivery] confirmed send without platform ID; delivery remains unverified");
         return;
       }
+      const bindingKey = outboundBindingKey(event?.to, event?.content);
+      const boundId = pendingDeliveryBindings.get(bindingKey) || null;
+      pendingDeliveryBindings.delete(bindingKey);
       const result = await post("/openclaw/message-delivery", {
         client_id: clientId,
         phone_number: event?.to,
         body: String(event?.content || ""),
         success,
         external_message_id: messageId,
+        message_log_id: boundId,
         error: event?.error || null
       });
       api.logger?.info?.(`[procurement-delivery] reconciliation ${result?.updated ? "updated" : "not_updated"} platformId=${messageId || "none"}`);
