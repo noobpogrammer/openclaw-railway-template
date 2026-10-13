@@ -444,11 +444,12 @@ const plugin = defineToolPlugin({
     tool({
       name: "procurement_accept_negotiated_quote",
       label: "Accept Negotiated Quote",
-      description: "Persist acceptance of an exact supplier quote after hard commercial approval. When revision_pending, the explicit pending revised quote_id is REQUIRED. Do not confirm acceptance before this succeeds.",
+      description: "Persist an accepted supplier quote ONLY after procurement_review_commercial_action returns APPROVE for action_type=accept and the exact quote. Pass the returned approval_id. Never accept on REJECT, RETRY, ADJUST or ESCALATE.",
       parameters: Type.Object({
         supplier_id: Id,
         rfq_id: Id,
-        quote_id: Type.Optional(Id),
+        quote_id: Id,
+        approval_id: Id,
         price: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
         quantity: Type.Optional(Type.Integer({ minimum: 1 }))
       }, { additionalProperties: false }),
