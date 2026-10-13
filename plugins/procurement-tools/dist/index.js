@@ -161,7 +161,6 @@ const plugin = defineToolPlugin({
     }),
     tool({
       name: "procurement_resolve_rfq_context",
-        "procurement_validate_rfq_mapping",
       label: "Resolve RFQ Context",
       description: "Resolve the current supplier message against multiple open RFQs using strong context first: native reply context, active negotiation, explicit product/spec clues, then deduction. Returns RESOLVED or a reduced AMBIGUOUS candidate set of at most three RFQs. Use before asking clarification when more than one RFQ may apply.",
       parameters: Type.Object({
