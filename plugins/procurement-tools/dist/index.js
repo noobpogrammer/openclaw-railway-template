@@ -568,6 +568,23 @@ plugin.register = (api) => {
       event_message_extendedText_stanzaId: Boolean(event?.message?.extendedTextMessage?.contextInfo?.stanzaId)
     };
     api.logger?.info?.(`[procurement-routing] message_received reply_id_present=${Boolean(replyId)} session_present=${Boolean(sessionKey)} id_fields=${JSON.stringify(idFields)}`);
+    // Compare the provider's internal quote naming with the public hook projection.
+    // Presence booleans only; no identifiers, message text or arbitrary object keys.
+    const quoteFields = {
+      event_quote_id: Boolean(event?.quote?.id),
+      context_quote_id: Boolean(context?.quote?.id),
+      event_quotedMessageId: Boolean(event?.quotedMessageId),
+      context_quotedMessageId: Boolean(context?.quotedMessageId),
+      event_metadata_quote_id: Boolean(event?.metadata?.quote?.id),
+      event_metadata_quotedMessageId: Boolean(event?.metadata?.quotedMessageId),
+      event_metadata_replyContext_id: Boolean(event?.metadata?.replyContext?.id),
+      context_metadata_quote_id: Boolean(context?.metadata?.quote?.id),
+      event_raw_quote_id: Boolean(event?.raw?.quote?.id),
+      event_message_quote_id: Boolean(event?.message?.quote?.id),
+      event_message_contextInfo_stanzaId: Boolean(event?.message?.contextInfo?.stanzaId),
+      event_message_extendedText_stanzaId: Boolean(event?.message?.extendedTextMessage?.contextInfo?.stanzaId)
+    };
+    api.logger?.info?.(`[procurement-routing] quote_handoff fields=${JSON.stringify(quoteFields)}`);
   });
 
   api.on("before_tool_call", async (event, context) => {
