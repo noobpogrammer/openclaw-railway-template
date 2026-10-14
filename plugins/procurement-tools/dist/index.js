@@ -554,7 +554,20 @@ plugin.register = (api) => {
       if (replyId) quotedReplyBySession.set(sessionKey, { id: replyId, at: Date.now() });
       else quotedReplyBySession.delete(sessionKey);
     }
-    api.logger?.info?.(`[procurement-routing] message_received reply_id_present=${Boolean(replyId)} session_present=${Boolean(sessionKey)}`);
+    // Presence-only diagnostic. No message bodies, phone numbers, IDs, or metadata values.
+    const idFields = {
+      event_messageId: Boolean(event?.messageId),
+      context_messageId: Boolean(context?.messageId),
+      event_replyToId: Boolean(event?.replyToId),
+      context_replyToId: Boolean(context?.replyToId),
+      event_metadata_replyToId: Boolean(event?.metadata?.replyToId),
+      event_metadata_replyToIdFull: Boolean(event?.metadata?.replyToIdFull),
+      event_replyToMessageId: Boolean(event?.replyToMessageId),
+      context_replyToMessageId: Boolean(context?.replyToMessageId),
+      event_message_contextInfo_stanzaId: Boolean(event?.message?.contextInfo?.stanzaId),
+      event_message_extendedText_stanzaId: Boolean(event?.message?.extendedTextMessage?.contextInfo?.stanzaId)
+    };
+    api.logger?.info?.(`[procurement-routing] message_received reply_id_present=${Boolean(replyId)} session_present=${Boolean(sessionKey)} id_fields=${JSON.stringify(idFields)}`);
   });
 
   api.on("before_tool_call", async (event, context) => {
