@@ -2370,13 +2370,8 @@ function ensureProcurementRuntimeConfig() {
     changed = true;
   }
 
-  config.agents = config.agents || {};
-  config.agents.defaults = config.agents.defaults || {};
-  config.agents.defaults.model = config.agents.defaults.model || {};
-  if (config.agents.defaults.model.primary !== "deepseek/deepseek-v4-pro") {
-    config.agents.defaults.model.primary = "deepseek/deepseek-v4-pro";
-    changed = true;
-  }
+  // Model selection belongs to onboarding and `openclaw models set`.
+  // Startup maintenance must preserve the user's configured model.
 
   if (!changed) return false;
 
