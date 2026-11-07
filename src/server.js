@@ -1,4 +1,5 @@
 import childProcess from "node:child_process";
+import { ensureProcurementModelRuntime } from "./procurement-runtime.js";
 import { buildAnalysisJob, extractAnalysisResult } from "./procurement-analysis.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -2394,6 +2395,8 @@ function ensureProcurementRuntimeConfig() {
     changed = true;
   }
 
+  if (ensureProcurementModelRuntime(config)) changed = true;
+
   // Model selection belongs to onboarding and `openclaw models set`.
   // Startup maintenance must preserve the user's configured model.
 
@@ -2407,7 +2410,7 @@ function ensureProcurementRuntimeConfig() {
   fs.renameSync(tmp, p);
   log.info(
     "procurement-config",
-    "enforced per-peer WhatsApp sessions, procurement hook access, direct tool schemas, full tool profile, and explicit DeepSeek provider metadata"
+    "enforced per-peer WhatsApp sessions, procurement hook access, direct tool schemas, full tool profile, explicit DeepSeek provider metadata, and OpenClaw runtime for OpenAI procurement tool policy"
   );
   return true;
 }

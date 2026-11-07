@@ -111,3 +111,7 @@ A: Go to `/setup` and click the "Run Doctor" button. This runs `openclaw doctor 
 ## Support
 
 Need help? [Request support on Railway Station](https://station.railway.com/all-templates/d0880c01-2cc5-462c-8b76-d84c1a203348)
+
+### Procurement runtime compatibility
+
+Startup pins OpenAI model runtime policy to `openclaw`, preserving the selected model and OAuth profiles. The procurement plugin uses `before_prompt_build.toolsAllow` to restrict tools per turn; the Codex app-server runtime rejects this policy. The built-in runtime supports it and routes existing OpenAI OAuth through its Codex-auth transport. Do not remove the tool policy to work around runtime errors. See https://docs.openclaw.ai/concepts/agent-runtimes.
