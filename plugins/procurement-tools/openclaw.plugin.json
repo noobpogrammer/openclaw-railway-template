@@ -28,7 +28,8 @@
       "procurement_log_message",
       "procurement_parse_multi_item_quotes",
       "procurement_record_multi_item_quotes",
-      "procurement_mark_quote_revision"
+      "procurement_mark_quote_revision",
+      "procurement_validate_rfq_mapping"
     ]
   }
 }

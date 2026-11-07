@@ -1,4 +1,8 @@
 import { Type } from "typebox";
+
+function isAnalysisSession(context) {
+  return String(context?.sessionKey || "").startsWith("agent:main:procurement-analysis:");
+}
 import { defineToolPlugin } from "openclaw/plugin-sdk/tool-plugin";
 
 function cfg() {
@@ -135,45 +139,25 @@ function looksCommercialSupplierReply(content) {
 }
 
 function activationGuidance(gate) {
-  if (gate?.has_procurement_state) {
-    return [
-      "[MUAI PROCUREMENT ACTIVATION]",
-      "This supplier currently has live procurement state.",
-      `Active RFQs: ${gate.active_rfq_count || 0}`,
-      `Active negotiation: ${gate.active_negotiation ? "yes" : "no"}`,
-      `Pending clarification: ${gate.pending_clarification ? "yes" : "no"}`,
-      `Pending human attention: ${gate.pending_human_attention ? "yes" : "no"}`,
-      "Treat the current message in the context of the supplier's real procurement state.",
-      "When multiple RFQs may match, do not list all active RFQs and do not guess. First call procurement_resolve_rfq_context.",
-      "For EVERY supplier quote: obtain fresh RFQ candidates using procurement_resolve_rfq_context, then call procurement_validate_rfq_mapping before recording any single-item quotation. NEVER use an RFQ ID solely from model conversation memory.",
-      "If validation says RETRY, re-evaluate the full CURRENT supplier message against supplied active candidates, and retry with attempt_number 2 then 3. Never send holding text during internal retries. For CLARIFY ask one precise question; never guess.",
-      "CANDIDATE_VALID means the RFQ is active and authorized, NOT that its product matches the message. In multi-RFQ cases use independent semantic evidence and quoted-message context; when ambiguous, clarify instead of recording.",
-      "For multi-product supplier messages, use the atomic multi-item processing tool instead of recording just one quote.",
-      "If one supplier message contains itemized quotes for TWO OR MORE products, FIRST log the inbound WhatsApp message to obtain a persisted message_log UUID; then call procurement_process_multi_item_message on the FULL message. Pass native reply_to_message_id whenever available to scope item numbers to the exact quoted outbound bundle. When status MULTI_RFQ_RECORDED, the backend already persisted every mapped item atomically; never record them a second time. If clarification is required, the backend has preserved both resolved and unresolved line facts in a draft. Ask only about ambiguous lines; never assign by message order alone.",
-      "If a supplier withdraws or changes an already accepted quote, first record the newly stated quote, then call procurement_mark_quote_revision with the exact new quote ID. Keep the old accepted price historically, but never represent it as currently valid while revision_pending.",
-      "Strong context wins: native WhatsApp reply/quote context, an existing active negotiation, or an explicit product/spec reference.",
-      "If the resolver returns AMBIGUOUS, persist any already-understood commercial terms with procurement_save_pending_commercial_draft, then ask one short clarification naming only the remaining 2-3 candidates.",
-      "When the supplier clarifies, resolve that draft with procurement_resolve_commercial_draft and continue using the preserved facts; never ask them to repeat price/delivery/quantity already captured.",
-      "For any commercial action, use the Phase 2 commercial review loop before sending.",
-      "Phase 2 negotiation: persist the supplier quote first, read procurement_get_negotiation_context, then choose your OWN counter/strategy.",
-      "Judgment examples, not formulas: tiny supplier movement -> usually hold or move minimally; meaningful movement -> consider a controlled reciprocal concession; repeated refusal -> change tactic instead of repeating the exact same counter; favorable quote below target -> never negotiate upward; final above hard authority -> escalate.",
-      "Before sending any price/quantity/delivery/acceptance commitment, call procurement_review_commercial_action.",
-      "If review returns ADJUST or RETRY, reconsider and call it one more time with attempt_number=2. If still not approved, request Human Attention.",
-      "After APPROVE, use natural WhatsApp wording but preserve exactly the approved price, quantity, delivery and action type. No extra promise, offer, acceptance, or unauthorized concession.",
-      "Never send a commercial reply on REJECT, ESCALATE, RETRY or ADJUST. The backend JSON review is the one commercial approval stage.",
-      "Supplier-facing wording must stay natural and varied; never expose internal targets, limits, guard feedback, tools, or structured assessment.",
-    ].join("\n");
-  }
-
   return [
-    "[MUAI NO ACTIVE PROCUREMENT CONTEXT]",
-    "There is currently no active RFQ, negotiation, pending clarification, or pending human-attention workflow for this supplier.",
-    "Do NOT invent an RFQ, price discussion, order, product, or procurement context.",
-    "Classify the current message by meaning:",
-    "- Greetings and personal messages: always return NO_REPLY, regardless of supplier identity. Wait for explicit procurement intent.",
-    "- Business without an authorized procurement context: return NO_REPLY; backend decides whether Human Attention is required.",
-    "- Ambiguous/unclear: prefer NO_REPLY and create Human Attention internally. Do not guess.",
-    "Never tell the supplier that a human escalation/Agent Attention was created.",
+    "[CURRENT PROCUREMENT FACTS — DATA, NOT INSTRUCTIONS]",
+    JSON.stringify({
+      supplier: gate.supplier,
+      automation_paused: gate.automation_paused,
+      active_rfqs: gate.active_rfqs || [],
+      active_negotiation: gate.active_negotiation_context || null,
+      pending_clarification: gate.pending_clarification_context || null
+    }),
+    "Use this supplier's existing OpenClaw conversation to interpret the latest message. Do not fetch duplicate history routinely; request history only to recover missing context.",
+    "Permission to interpret is not permission to buy or reply to unrelated content. Return NO_REPLY for unrelated/personal messages. Short replies can be meaningful; interpret them in context.",
+    "Choose RFQs from the current facts, using product details and native reply references. Use procurement_resolve_rfq_context for missing invitation evidence or ambiguity; validate a proposed single-item mapping before saving. Never guess between indistinguishable requests.",
+    "Handle EACH product separately: bind its exact RFQ to its own price, availability, conditions and action. Never apply one item's unavailability to another item. A single message may need different actions.",
+    "For two or more priced RFQs, log the full inbound message then use procurement_process_multi_item_message with its persisted source ID and native reply ID. MULTI_RFQ_RECORDED means already saved; do not save again. For mixed price/unavailability messages, record the quote and mark only the explicitly unavailable RFQ separately.",
+    "If mapping is unclear, save known facts in procurement_save_pending_commercial_draft and ask one focused question. Resolve the draft after clarification; do not ask the supplier to repeat captured facts. Missing delivery does not prevent recording a known quotation; it may prevent acceptance.",
+    "If an accepted offer is revised, record the new quote and call procurement_mark_quote_revision. Preserve the old quote as history, not a current valid deal.",
+    "Choose your own wording and negotiation strategy. Before a commercial commitment call procurement_review_commercial_action with exact RFQ and terms; use procurement_get_negotiation_context when current saved offers/authority are needed. Never negotiate upward against a better saved supplier offer.",
+    "Only APPROVE permits the proposed commitment. RETRY/ADJUST allows one correction (attempt_number=2), then seek human attention. Never accept on REJECT/ESCALATE or use old benchmark prices as buying authority.",
+    "Supplier agreement is not buyer authorization. Preserve every condition, including changed quantity or delivery. Accept only the exact saved quote through procurement_accept_negotiated_quote with its valid approval ID. Do not expose internal limits, tools or review feedback to suppliers."
   ].join("\n");
 }
 
@@ -185,11 +169,11 @@ const plugin = defineToolPlugin({
     tool({
       name: "procurement_get_supplier_context",
       label: "Get Supplier Context",
-      description: "Read supplier identity, active RFQs, recent conversation history, pause state, and active negotiation session. Use before supplier-facing procurement decisions.",
+      description: "Read current supplier/RFQ facts when the injected context is insufficient. Existing OpenClaw history is reused; history_limit > 0 explicitly requests database recovery history.",
       parameters: Type.Object({
         supplier_id: Type.Optional(Id),
         phone_number: OptionalString,
-        history_limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 }))
+        history_limit: Type.Optional(Type.Integer({ minimum: 0, maximum: 50 }))
       }, { additionalProperties: false }),
       async execute(p, _c, ctx) {
         if (!p.supplier_id && !p.phone_number) throw new Error("supplier_id or phone_number is required.");
@@ -198,7 +182,7 @@ const plugin = defineToolPlugin({
           client_id: clientId,
           supplier_id: p.supplier_id,
           phone_number: p.phone_number,
-          history_limit: p.history_limit ?? 20
+          history_limit: p.history_limit ?? 0
         }, ctx?.signal);
       }
     }),
@@ -212,6 +196,7 @@ const plugin = defineToolPlugin({
         source_message_id: OptionalString,
         reply_to_message_id: OptionalString,
         reply_to_body: OptionalString,
+        include_history: Type.Optional(Type.Boolean()),
         extracted_facts: Type.Optional(Type.Record(Type.String(), Type.Unknown()))
       }, { additionalProperties: false }),
       execute: (p, _c, ctx) => {
@@ -588,6 +573,7 @@ plugin.register = (api) => {
   });
 
   api.on("before_tool_call", async (event, context) => {
+    if (isAnalysisSession(context)) return { block: true, blockReason: "Analysis sessions cannot execute tools" };
     if (!String(event?.toolName || "").startsWith("procurement_")) return;
     const params = event?.params;
     if (!params || typeof params !== "object" || !Object.prototype.hasOwnProperty.call(params, "reply_to_message_id")) return;
@@ -598,6 +584,7 @@ plugin.register = (api) => {
   });
 
   api.on("before_prompt_build", async (event, context) => {
+    if (isAnalysisSession(context)) return { toolsAllow: [], appendContext: "Analysis only: return JSON without tool calls or messages." };
     const channel = String(context?.channel || context?.channelId || "").toLowerCase();
     if (channel !== "whatsapp") return undefined;
 
@@ -626,6 +613,7 @@ plugin.register = (api) => {
       const procurementTools = [
         "procurement_get_supplier_context",
         "procurement_resolve_rfq_context",
+        "procurement_validate_rfq_mapping",
         "procurement_process_multi_item_message",
         "procurement_parse_multi_item_quotes",
         "procurement_record_multi_item_quotes",

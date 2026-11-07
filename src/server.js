@@ -1,4 +1,5 @@
 import childProcess from "node:child_process";
+import { buildAnalysisJob, extractAnalysisResult } from "./procurement-analysis.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -781,6 +782,29 @@ app.post("/internal/whatsapp/send", requireInternalToolAuth, async (req, res) =>
   } catch (err) {
     log.error("whatsapp-send", err?.message || String(err));
     return res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+app.post("/internal/procurement/analyze", requireInternalToolAuth, async (req, res) => {
+  let job;
+  try {
+    job = buildAnalysisJob(req.body);
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: err.message });
+  }
+  try {
+    const ready = await ensureGatewayRunning();
+    if (!ready?.ok) return res.status(503).json({ ok: false, error: "OpenClaw Gateway is not ready" });
+    const run = await runCmd(OPENCLAW_NODE, clawArgs([
+      "agent", "--session-key", job.sessionKey, "--message", job.prompt, "--json",
+    ]), { signal: AbortSignal.timeout(110000) });
+    if (run.code !== 0) throw new Error("OpenClaw analysis process failed");
+    const result = extractAnalysisResult(parseTrailingJson(run.output));
+    return res.json({ ok: true, result });
+  } catch (err) {
+    // No supplier text, prompts, credentials or model output in the log/error response.
+    log.error("procurement-analysis", "Analysis request failed");
+    return res.status(502).json({ ok: false, error: "OpenClaw analysis unavailable or invalid" });
   }
 });
 
