@@ -1,5 +1,6 @@
 import childProcess from "node:child_process";
 import { ensureProcurementModelRuntime } from "./procurement-runtime.js";
+import { repairProcurementSessionRuntimes } from "./procurement-session-runtime.js";
 import { buildAnalysisJob, extractAnalysisResult } from "./procurement-analysis.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -2434,6 +2435,21 @@ const server = app.listen(PORT, () => {
 
     (async () => {
       await ensureGatewayRunning();
+      try {
+        const summary = await repairProcurementSessionRuntimes(async (method, params) => {
+          const result = await runCmd(OPENCLAW_NODE, clawArgs([
+            "gateway", "call", method, "--json", "--params", JSON.stringify(params),
+            "--url", `ws://${INTERNAL_GATEWAY_HOST}:${INTERNAL_GATEWAY_PORT}`,
+            "--token", OPENCLAW_GATEWAY_TOKEN, "--timeout", "20000"
+          ]), { signal: AbortSignal.timeout(30000) });
+          const payload = parseTrailingJson(result.output);
+          if (result.code !== 0 || !payload) throw new Error("Gateway session API call failed");
+          return payload;
+        });
+        log.info("procurement-runtime", `session override repair ${JSON.stringify(summary)}`);
+      } catch (err) {
+        log.warn("procurement-runtime", `session override repair failed: ${err.message}`);
+      }
     })().catch((err) => {
       log.error("wrapper", `failed to start gateway at boot: ${err.message}`);
     });
