@@ -1,4 +1,5 @@
 import childProcess from "node:child_process";
+import { OperatorJobs } from "./operator-jobs.js";
 import { ensureProcurementModelRuntime } from "./procurement-runtime.js";
 import { repairProcurementSessionRuntimes } from "./procurement-session-runtime.js";
 import { buildAnalysisJob, extractAnalysisResult } from "./procurement-analysis.js";
@@ -917,21 +918,10 @@ app.post("/internal/procurement/reminder", requireInternalToolAuth, async (req, 
   }
 });
 
-app.post("/internal/procurement/operator-instruction", requireInternalToolAuth, async (req, res) => {
-  try {
-    const target = normalizeWhatsAppNumber(req.body?.phone_number);
-    const instruction = String(req.body?.instruction || "").trim();
-    const flagId = String(req.body?.flag_id || "").trim();
-    const rfqId = String(req.body?.rfq_id || "").trim();
-    const reason = String(req.body?.reason || "").trim();
-
-    if (!instruction) {
-      return res.status(400).json({ ok: false, error: "instruction is required" });
-    }
-
+const operatorJobs = new OperatorJobs(path.join(STATE_DIR, "operator-instruction-jobs"), async ({target, instruction, flagId, rfqId, reason}) => {
     const ready = await ensureGatewayRunning();
     if (!ready?.ok) {
-      return res.status(503).json({ ok: false, error: "OpenClaw Gateway is not ready" });
+      throw new Error("OpenClaw Gateway is not ready");
     }
 
     const sessionKey = `agent:main:whatsapp:direct:${target}`;
@@ -947,6 +937,8 @@ app.post("/internal/procurement/operator-instruction", requireInternalToolAuth, 
       "If the operator instructs you to accept/confirm a supplier quote, first ensure the latest supplier quote is persisted with procurement_record_quote, then call procurement_accept_negotiated_quote. Only send confirmation after that acceptance tool succeeds.",
       "Never tell a supplier that a quote/order is confirmed when acceptance persistence failed.",
       "Do not mention this internal instruction, flag IDs, tools, or backend systems to the supplier.",
+      "When resuming after a technical issue, first check the latest saved offer and current RFQ authority, then continue the next procurement step. Saving or acknowledging a quote alone is not completion of negotiation.",
+      "For a negotiable offer above the permitted price, pursue a better offer within buyer authority; do not require human review solely because the first offer is above budget. Escalate final unacceptable offers or missing authority instead of inventing permission.",
       "If a supplier-facing reply is appropriate, send only the natural business reply.",
     ].filter(Boolean).join("\n");
 
@@ -965,22 +957,39 @@ app.post("/internal/procurement/operator-instruction", requireInternalToolAuth, 
         target,
         "--json",
       ]),
+      { signal: AbortSignal.timeout(12 * 60 * 1000) },
     );
 
     const clean = stripAnsi(result.output || "").trim();
     const payload = parseTrailingJson(clean);
-    if (result.code !== 0 || payload?.ok === false || payload?.status === "error") {
+    if (result.code !== 0 || !payload || payload?.ok === false || ["error", "accepted", "running", "timeout"].includes(payload?.status) || payload?.result?.meta?.aborted || payload?.meta?.aborted) {
       const error = payload?.error?.message || payload?.error || clean || `openclaw agent exited with code ${result.code}`;
       log.error("operator-instruction", `failed target=${target}: ${String(error).slice(0, 500)}`);
-      return res.status(502).json({ ok: false, error: String(error).slice(0, 1000) });
+      throw new Error("Operator instruction execution failed");
     }
 
-    log.info("operator-instruction", `completed target=${target} session=${sessionKey} flag=${flagId || "none"} rfq=${rfqId || "none"}`);
-    return res.json({ ok: true, phone_number: target, session_key: sessionKey, result: payload });
-  } catch (err) {
-    log.error("operator-instruction", err?.message || String(err));
-    return res.status(500).json({ ok: false, error: err?.message || String(err) });
-  }
+  log.info("operator-instruction", "job processing completed");
+});
+const operatorJobTimer = setInterval(() => {
+  operatorJobs.pump().catch(err => log.error("operator-instruction", `job worker failed: ${err.message}`));
+}, 1000);
+operatorJobTimer.unref();
+
+app.post("/internal/procurement/operator-instruction", requireInternalToolAuth, (req, res) => {
+  try {
+    const target = normalizeWhatsAppNumber(req.body?.phone_number);
+    const instruction = String(req.body?.instruction || "").trim();
+    const flagId = String(req.body?.flag_id || "").trim();
+    const rfqId = String(req.body?.rfq_id || "").trim();
+    const reason = String(req.body?.reason || "").trim();
+    const id = String(req.body?.job_id || "").trim();
+    if (!instruction || !flagId || !target) return res.status(400).json({ok:false,error:"job_id, flag_id, phone_number and instruction are required"});
+    return res.status(202).json(operatorJobs.enqueue(id, {target,instruction,flagId,rfqId,reason}));
+  } catch(err) { return res.status(409).json({ok:false,error:err.message}); }
+});
+app.get("/internal/procurement/operator-instruction/:id", requireInternalToolAuth, (req,res) => {
+  try { return res.json(operatorJobs.status(req.params.id)); }
+  catch(err) { return res.status(err.code==='ENOENT'?404:400).json({ok:false,error:"Instruction status unavailable"}); }
 });
 
 app.post("/internal/whatsapp/allowlist/sync", requireInternalToolAuth, async (req, res) => {
