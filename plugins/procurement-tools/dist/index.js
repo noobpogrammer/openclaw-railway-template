@@ -156,6 +156,10 @@ function activationGuidance(gate) {
     "If mapping is unclear, save known facts in procurement_save_pending_commercial_draft and ask one focused question. Resolve the draft after clarification; do not ask the supplier to repeat captured facts. Missing delivery does not prevent recording a known quotation; it may prevent acceptance.",
     "If an accepted offer is revised, record the new quote and call procurement_mark_quote_revision. Preserve the old quote as history, not a current valid deal.",
     "Recording a quote is not the end of handling. Evaluate its saved terms against current RFQ authority and continue negotiation when appropriate. An initial price above budget alone is not a reason to stop for human review; final unacceptable offers, unresolved conditions or missing authority may be. Never reveal the buyer ceiling as an internal limit.",
+    "Price authority: use explicit target/maximum first. Only when both are absent, last_quote is the target and last_quote + AED 5 per unit is the authorized ceiling; never add a tolerance above an explicit maximum. Use the backend price_policy, not invented limits.",
+    "For a favorable opening offer at/below target, make at most one modest extra-saving ask unless final wording or urgency makes closing better. After refusal or a reasonable reduction evaluate closing, not endless discount demands. A >=3x last-price anomaly requires human verification of units/currency/specs.",
+    "Use current_offers and term_sources. Price-only revisions retain established terms for the same item. Never use the buyer requested delivery/quantity as proof of supplier agreement. Unknown terms remain unknown; clarify only the missing term. Multiple variants without a clear mapping require clarification, not guessing.",
+    "Send the exact approved_message returned by commercial review. For multiple items, join each approved_message with newlines only. Accept the exact quote successfully before sending its confirmation. Even clarification/acknowledgment replies need review; logged text is not approval.",
     "Choose your own wording and negotiation strategy. Before a commercial commitment call procurement_review_commercial_action with exact RFQ and terms; use procurement_get_negotiation_context when current saved offers/authority are needed. Never negotiate upward against a better saved supplier offer.",
     "Only APPROVE permits the proposed commitment. RETRY/ADJUST allows one correction (attempt_number=2), then seek human attention. Never accept on REJECT/ESCALATE or use old benchmark prices as buying authority.",
     "Supplier agreement is not buyer authorization. Preserve every condition, including changed quantity or delivery. Accept only the exact saved quote through procurement_accept_negotiated_quote with its valid approval ID. Do not expose internal limits, tools or review feedback to suppliers."
@@ -699,6 +703,26 @@ plugin.register = (api) => {
         cancel: true,
         cancelReason: "supplier_safety_provider_error"
       };
+    }
+
+    // Final transport boundary: a logged message is not commercial authorization.
+    if (channelId === "whatsapp") {
+      const body = String(event?.content || "").replace(/^\[(?:Procurment|Procurement) Agent\]\s*/i, "").trim();
+      try {
+        const { clientId } = cfg();
+        const authorized = await post("/openclaw/claim-commercial-outbound", {
+          client_id: clientId, phone_number: event?.to, message: body
+        });
+        if (!authorized?.authorized) {
+          const system = await post("/openclaw/authorize-system-outbound", {
+            client_id: clientId, phone_number: event?.to, message: body
+          });
+          if (!system?.authorized) return { cancel: true, cancelReason: "commercial_approval_missing" };
+        }
+      } catch (err) {
+        api.logger?.error?.(`[commercial-guard] approval unavailable: ${err?.message || err}`);
+        return { cancel: true, cancelReason: "commercial_approval_unavailable" };
+      }
     }
 
     // Bind a pre-existing outbound log before sending, not a second commercial
