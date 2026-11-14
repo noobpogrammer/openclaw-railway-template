@@ -150,6 +150,8 @@ function activationGuidance(gate) {
     }),
     "Use this supplier's existing OpenClaw conversation to interpret the latest message. Do not fetch duplicate history routinely; request history only to recover missing context.",
     "Permission to interpret is not permission to buy or reply to unrelated content. Return NO_REPLY for unrelated/personal messages. Short replies can be meaningful; interpret them in context.",
+    "For clarify_rfq supply the persisted inbound source_message_id and raw_message; put captured facts in assessment.extracted_facts. The backend saves a waiting draft and reuses its approval. ALREADY_PENDING/ALREADY_HANDLED means do not send another question or escalate merely for that result. Inspect pending_rfq_clarifications in supplier context, associate a clear subsequent answer, and resolve its draft with answer_source_message_id and raw_answer before continuing from preserved facts. Resolve only explicitly identified drafts; never apply one answer indiscriminately to several requests.",
+    "An accepted deal can be acknowledged after deadline using acknowledge with the exact current accepted quote_id and proposal={}; this does not permit new negotiation. A question_claimed_at timestamp means a send was attempted, not proof of delivery; check delivery records before any manual retry.",
     "Before selecting an action, identify each RFQ and record assessment.rfq_decision with rfq_match (or UNCLEAR), evidence, alternative RFQs and evidence_source. A matching price or latest invitation alone is insufficient. Short replies can be resolved by a clearly established ongoing exchange or a native single-item reply; do not require product keywords when context is clear.",
     "If several RFQs remain plausible, use procurement_review_commercial_action action_type=clarify_rfq, proposal={}, omit rfq_id and quote_id. Send its exact approved_message. Do not guess an RFQ to ask a question, modify quotes, reopen accepted deals, or escalate merely because the product is unclear. Save extracted facts in a pending draft when useful.",
     "Keep accepted deals separate from unfinished negotiations. An old matching accepted price does not identify a new message. For acknowledge/acknowledgement/ask/clarify/request_info/request_price use proposal={} and a supported RFQ. Never put custom message text inside proposal. Correct retryable tool-format errors without human review.",
@@ -330,6 +332,8 @@ const plugin = defineToolPlugin({
       parameters: Type.Object({
         supplier_id: Id,
         draft_id: Id,
+        answer_source_message_id: Id,
+        raw_answer: OptionalString,
         rfq_id: Id
       }, { additionalProperties: false }),
       execute: (p, _c, ctx) => {
@@ -364,6 +368,8 @@ const plugin = defineToolPlugin({
         supplier_id: Id,
         rfq_id: Type.Optional(Id),
         quote_id: Type.Optional(Id),
+        source_message_id: OptionalString,
+        raw_message: OptionalString,
         action_type: Type.String(),
         proposed_message: Type.Optional(Type.String({ maxLength: 4000 })),
         attempt_number: Type.Integer({ minimum: 1, maximum: 2 }),
