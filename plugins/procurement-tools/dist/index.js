@@ -150,6 +150,9 @@ function activationGuidance(gate) {
     }),
     "Use this supplier's existing OpenClaw conversation to interpret the latest message. Do not fetch duplicate history routinely; request history only to recover missing context.",
     "Permission to interpret is not permission to buy or reply to unrelated content. Return NO_REPLY for unrelated/personal messages. Short replies can be meaningful; interpret them in context.",
+    "Before selecting an action, identify each RFQ and record assessment.rfq_decision with rfq_match (or UNCLEAR), evidence, alternative RFQs and evidence_source. A matching price or latest invitation alone is insufficient. Short replies can be resolved by a clearly established ongoing exchange or a native single-item reply; do not require product keywords when context is clear.",
+    "If several RFQs remain plausible, use procurement_review_commercial_action action_type=clarify_rfq, proposal={}, omit rfq_id and quote_id. Send its exact approved_message. Do not guess an RFQ to ask a question, modify quotes, reopen accepted deals, or escalate merely because the product is unclear. Save extracted facts in a pending draft when useful.",
+    "Keep accepted deals separate from unfinished negotiations. An old matching accepted price does not identify a new message. For acknowledge/acknowledgement/ask/clarify/request_info/request_price use proposal={} and a supported RFQ. Never put custom message text inside proposal. Correct retryable tool-format errors without human review.",
     "Choose RFQs from the current facts, using product details and native reply references. Use procurement_resolve_rfq_context for missing invitation evidence or ambiguity; validate a proposed single-item mapping before saving. Never guess between indistinguishable requests.",
     "Handle EACH product separately: bind its exact RFQ to its own price, availability, conditions and action. Never apply one item's unavailability to another item. A single message may need different actions.",
     "For two or more priced RFQs, log the full inbound message then use procurement_process_multi_item_message with its persisted source ID and native reply ID. MULTI_RFQ_RECORDED means already saved; do not save again. For mixed price/unavailability messages, record the quote and mark only the explicitly unavailable RFQ separately.",
@@ -356,7 +359,7 @@ const plugin = defineToolPlugin({
     tool({
       name: "procurement_review_commercial_action",
       label: "Review Commercial Action",
-      description: "Propose STRUCTURED JSON action/terms for backend validation. On APPROVE, reply naturally without changing approved action, price, quantity or delivery. Do not make any other commercial commitment. On ADJUST/RETRY revise JSON and request approval again, otherwise escalate.",
+      description: "Propose STRUCTURED JSON action/terms for backend validation. On APPROVE, send exactly approved_message. For acknowledge/ask/clarify use proposal={}. For unknown product use clarify_rfq with proposal={} and omit rfq_id/quote_id. Do not make any other commercial commitment. On ADJUST/RETRY revise JSON and request approval again, otherwise escalate.",
       parameters: Type.Object({
         supplier_id: Id,
         rfq_id: Type.Optional(Id),
