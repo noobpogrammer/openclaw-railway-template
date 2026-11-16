@@ -555,22 +555,24 @@ function normalizeWhatsAppNumber(value) {
 }
 
 async function readWhatsAppAllowlist() {
-  const result = await runCmd(
-    OPENCLAW_NODE,
-    clawArgs(["config", "get", "channels.whatsapp.allowFrom"]),
-  );
+  // Read the wrapper-owned file directly; CLI failures must never erase other contacts.
+  const config = JSON.parse(fs.readFileSync(configPath(), "utf8"));
+  const values = config.channels?.whatsapp?.allowFrom;
+  if (values !== undefined && !Array.isArray(values)) throw new Error("Invalid WhatsApp allowlist");
+  return (values || []).map(String);
+}
 
-  if (result.code !== 0) return [];
-
-  const clean = stripAnsi(result.output).trim();
-  if (!clean) return [];
-
-  try {
-    const parsed = JSON.parse(clean);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
+let allowlistMutation = Promise.resolve();
+function mutateWhatsAppAllowlist(action, numbers) {
+  const operation = allowlistMutation.then(async () => {
+    const current = (await readWhatsAppAllowlist()).filter(value => value !== "*").map(normalizeWhatsAppNumber);
+    const incoming = numbers.map(normalizeWhatsAppNumber);
+    const next = action === "replace" ? incoming : action === "remove"
+      ? current.filter(value => !incoming.includes(value)) : [...current, ...incoming];
+    return writeWhatsAppAllowlist(next);
+  });
+  allowlistMutation = operation.catch(() => {});
+  return operation;
 }
 
 async function writeWhatsAppAllowlist(values) {
@@ -586,6 +588,13 @@ async function writeWhatsAppAllowlist(values) {
     config = JSON.parse(fs.readFileSync(p, "utf8"));
   } catch (err) {
     throw new Error(`Failed to read OpenClaw config: ${err.message}`);
+  }
+
+  const previous = [...new Set((config.channels?.whatsapp?.allowFrom || []).map(String))].sort();
+  if (config.channels?.whatsapp?.dmPolicy === "allowlist" && JSON.stringify(previous) === JSON.stringify(unique)) {
+    await ensureGatewayRunning();
+    if (!await waitForGatewayReady({ timeoutMs: 60_000 })) throw new Error("Gateway is not ready after supplier synchronization");
+    return unique;
   }
 
   config.channels = config.channels || {};
@@ -999,13 +1008,7 @@ app.post("/internal/whatsapp/allowlist/sync", requireInternalToolAuth, async (re
       return res.status(400).json({ ok: false, error: "phone_numbers must be an array" });
     }
     const incoming = req.body.phone_numbers.map(normalizeWhatsAppNumber);
-    const current = await readWhatsAppAllowlist();
-    const normalizedCurrent = current
-      .filter((entry) => entry !== "*")
-      .map((entry) => {
-        try { return normalizeWhatsAppNumber(entry); } catch { return entry; }
-      });
-    const allowFrom = await writeWhatsAppAllowlist([...normalizedCurrent, ...incoming]);
+    const allowFrom = await mutateWhatsAppAllowlist("add", incoming);
     log.info("whatsapp-allowlist", `bulk merged ${incoming.length} supplier numbers; count=${allowFrom.length}`);
     res.json({ ok: true, action: "merge", allowFrom });
   } catch (err) {
@@ -1032,21 +1035,7 @@ app.post("/internal/whatsapp/allowlist", requireInternalToolAuth, async (req, re
     }
 
     const phoneNumber = normalizeWhatsAppNumber(req.body?.phone_number);
-    const current = await readWhatsAppAllowlist();
-    const normalizedCurrent = current
-      .filter((entry) => entry !== "*")
-      .map((entry) => {
-        try { return normalizeWhatsAppNumber(entry); } catch { return entry; }
-      });
-
-    let next;
-    if (action === "add") {
-      next = [...normalizedCurrent, phoneNumber];
-    } else {
-      next = normalizedCurrent.filter((entry) => entry !== phoneNumber);
-    }
-
-    const allowFrom = await writeWhatsAppAllowlist(next);
+    const allowFrom = await mutateWhatsAppAllowlist(action, [phoneNumber]);
     log.info("whatsapp-allowlist", `${action} ${phoneNumber}; count=${allowFrom.length}`);
     res.json({ ok: true, action, phone_number: phoneNumber, allowFrom });
   } catch (err) {
@@ -1061,7 +1050,7 @@ app.put("/internal/whatsapp/allowlist", requireInternalToolAuth, async (req, res
       return res.status(400).json({ ok: false, error: "phone_numbers must be an array" });
     }
     const phoneNumbers = req.body.phone_numbers.map(normalizeWhatsAppNumber);
-    const allowFrom = await writeWhatsAppAllowlist(phoneNumbers);
+    const allowFrom = await mutateWhatsAppAllowlist("replace", phoneNumbers);
     log.info("whatsapp-allowlist", `replaced allowlist; count=${allowFrom.length}`);
     res.json({ ok: true, action: "replace", allowFrom });
   } catch (err) {
