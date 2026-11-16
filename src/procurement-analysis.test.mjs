@@ -32,3 +32,11 @@ test("fails closed on unsuccessful, missing or prose output", () => {
     assert.throws(() => extractAnalysisResult(payload));
   }
 });
+
+
+test("multi-item prompt preserves saved numbering and unavailable lines", () => {
+  const job = buildAnalysisJob({operation:"multi_rfq_quote_parser",data:{invitation_evidence:[{items:[{rfq_id:"a",item_position:2}]}]},schema:{}});
+  assert.match(job.prompt, /is_available=false/);
+  assert.match(job.prompt, /Conflicting orderings require null mapping/);
+  assert.match(job.prompt, /item_position/);
+});

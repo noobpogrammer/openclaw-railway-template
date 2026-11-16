@@ -162,10 +162,10 @@ function activationGuidance(gate) {
     "Keep accepted deals separate from unfinished negotiations. An old matching accepted price does not identify a new message. For acknowledge/acknowledgement/ask/clarify/request_info/request_price use proposal={} and a supported RFQ. Never put custom message text inside proposal. Correct retryable tool-format errors without human review.",
     "Choose RFQs from the current facts, using product details and native reply references. Use procurement_resolve_rfq_context for missing invitation evidence or ambiguity; validate a proposed single-item mapping before saving. Never guess between indistinguishable requests.",
     "Handle EACH product separately: bind its exact RFQ to its own price, availability, conditions and action. Never apply one item's unavailability to another item. A single message may need different actions.",
-    "For two or more priced RFQs, log the full inbound message then use procurement_process_multi_item_message with its persisted source ID and native reply ID. MULTI_RFQ_RECORDED means already saved; do not save again. For mixed price/unavailability messages, record the quote and mark only the explicitly unavailable RFQ separately.",
+    "For two or more RFQs, including mixed prices and unavailability, log the full inbound message then use procurement_process_multi_item_message with its persisted source ID and native reply ID. MULTI_RFQ_RECORDED means already saved; do not save again. Mixed availability and prices are recorded atomically by the same tool; preserve all lines, including shortages. Read the resulting saved offers and buyer reviews before replying.",
     "If mapping is unclear, save known facts in procurement_save_pending_commercial_draft and ask one focused question. Resolve the draft after clarification; do not ask the supplier to repeat captured facts. Missing delivery does not prevent recording a known quotation; it may prevent acceptance.",
     "If an accepted offer is revised, record the new quote and call procurement_mark_quote_revision. Preserve the old quote as history, not a current valid deal.",
-    "Recording a quote is not the end of handling. Evaluate its saved terms against current RFQ authority and continue negotiation when appropriate. An initial price above budget alone is not a reason to stop for human review; final unacceptable offers, unresolved conditions or missing authority may be. Never reveal the buyer ceiling as an internal limit.",
+    "Quantity shortfalls automatically create a buyer decision in Recorded Quotes. Do not silently accept partial supply or file it as an RFQ mapping failure. Missing delivery does not prevent saving; ask only genuinely missing terms when needed. Recording a quote is not the end of handling. Evaluate its saved terms against current RFQ authority and continue negotiation when appropriate. An initial price above budget alone is not a reason to stop for human review; final unacceptable offers, unresolved conditions or missing authority may be. Never reveal the buyer ceiling as an internal limit.",
     "Price authority: use explicit target/maximum first. Only when both are absent, last_quote is the target and last_quote + AED 5 per unit is the authorized ceiling; never add a tolerance above an explicit maximum. Use the backend price_policy, not invented limits.",
     "For a favorable opening offer at/below target, make at most one modest extra-saving ask unless final wording or urgency makes closing better. After refusal or a reasonable reduction evaluate closing, not endless discount demands. A >=3x last-price anomaly requires human verification of units/currency/specs.",
     "Use current_offers and term_sources. Price-only revisions retain established terms for the same item. Never use the buyer requested delivery/quantity as proof of supplier agreement. Unknown terms remain unknown; clarify only the missing term. Multiple variants without a clear mapping require clarification, not guessing.",
@@ -257,7 +257,7 @@ const plugin = defineToolPlugin({
     tool({
       name: "procurement_parse_multi_item_quotes",
       label: "Parse Multi-Item Supplier Price List",
-      description: "Parse one WhatsApp message that prices multiple RFQs. Maps each priced line only to authorized supplier RFQs, returning CLARIFICATION_REQUIRED on ambiguity. Does NOT save any quotes.",
+      description: "Parse one WhatsApp message that prices multiple RFQs. Maps every priced or unavailable line only to authorized supplier RFQs, returning CLARIFICATION_REQUIRED on ambiguity. Does NOT save any quotes.",
       parameters: Type.Object({
         supplier_id: Id,
         message: Type.String({ minLength: 1 }),
@@ -282,7 +282,8 @@ const plugin = defineToolPlugin({
           product_reference: OptionalString,
           supplier_final: Type.Optional(Type.Boolean()),
           confidence: Type.Number({ minimum: 0, maximum: 1 }),
-          price: Type.Number({ exclusiveMinimum: 0 }),
+          price: Type.Optional(Type.Union([Type.Number({ exclusiveMinimum: 0 }), Type.Null()])),
+          is_available: Type.Optional(Type.Boolean()),
           quantity: Type.Optional(Type.Integer({ minimum: 1 })),
           variant_label: OptionalString,
           delivery_time: OptionalString,
@@ -340,7 +341,8 @@ const plugin = defineToolPlugin({
         answer_source_message_id: Id,
         raw_answer: OptionalString,
         rfq_id: Type.Optional(Id),
-        matched_quote_id: OptionalString
+        matched_quote_id: OptionalString,
+        no_linked_rfq: Type.Optional(Type.Boolean())
       }, { additionalProperties: false }),
       execute: (p, _c, ctx) => {
         const { clientId } = cfg();
