@@ -163,7 +163,7 @@ function activationGuidance(gate) {
     "Choose RFQs from the current facts, using product details and native reply references. Use procurement_resolve_rfq_context for missing invitation evidence or ambiguity; validate a proposed single-item mapping before saving. Never guess between indistinguishable requests.",
     "Handle EACH product separately: bind its exact RFQ to its own price, availability, conditions and action. Never apply one item's unavailability to another item. A single message may need different actions.",
     "For two or more RFQs, including mixed prices and unavailability, log the full inbound message then use procurement_process_multi_item_message with its persisted source ID and native reply ID. MULTI_RFQ_RECORDED means already saved; do not save again. Mixed availability and prices are recorded atomically by the same tool; preserve all lines, including shortages. Read the resulting saved offers and buyer reviews before replying.",
-    "If mapping is unclear, save known facts in procurement_save_pending_commercial_draft and ask one focused question. Resolve the draft after clarification; do not ask the supplier to repeat captured facts. Missing delivery does not prevent recording a known quotation; it may prevent acceptance.",
+    "If mapping is unclear, save known facts in procurement_save_pending_commercial_draft and ask one focused question. For a clarification mapping multiple products, reprocess the unchanged ORIGINAL message and source ID with clarification_source_message_id set to the saved answer ID. This links original prices to the verified answer and completes the whole draft; do not pass an empty single RFQ selection or ask for captured facts again. Missing delivery does not prevent recording a known quotation; it may prevent acceptance.",
     "If an accepted offer is revised, record the new quote and call procurement_mark_quote_revision. Preserve the old quote as history, not a current valid deal.",
     "Quantity shortfalls automatically create a buyer decision in Recorded Quotes. Do not silently accept partial supply or file it as an RFQ mapping failure. Missing delivery does not prevent saving; ask only genuinely missing terms when needed. Recording a quote is not the end of handling. Evaluate its saved terms against current RFQ authority and continue negotiation when appropriate. An initial price above budget alone is not a reason to stop for human review; final unacceptable offers, unresolved conditions or missing authority may be. Never reveal the buyer ceiling as an internal limit.",
     "Price authority: use explicit target/maximum first. Only when both are absent, last_quote is the target and last_quote + AED 5 per unit is the authorized ceiling; never add a tolerance above an explicit maximum. Use the backend price_policy, not invented limits.",
@@ -247,6 +247,7 @@ const plugin = defineToolPlugin({
         supplier_id: Id,
         message: Type.String({ minLength: 1 }),
         source_message_id: Id,
+        clarification_source_message_id: OptionalString,
         reply_to_message_id: OptionalString
       }, { additionalProperties: false }),
       execute: (p, _c, ctx) => {
@@ -262,6 +263,7 @@ const plugin = defineToolPlugin({
         supplier_id: Id,
         message: Type.String({ minLength: 1 }),
         source_message_id: OptionalString,
+        clarification_source_message_id: OptionalString,
         reply_to_message_id: OptionalString
       }, { additionalProperties: false }),
       execute: (p, _c, ctx) => {
